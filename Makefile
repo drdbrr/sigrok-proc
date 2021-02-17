@@ -5,7 +5,6 @@ PNAME='srproc'
 
 CFLAGS=-g -Wall
 
-#LIBS=-luv -lsigrok -lsigrokdecode -lglib-2.0 -lcjson
 LIBS=-lsigrok -lsigrokdecode -lglib-2.0
 
 all:
