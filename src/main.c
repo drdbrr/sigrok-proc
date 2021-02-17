@@ -30,16 +30,16 @@ int logic_cnt = 0;
 int analog_cnt = 0;
 
 gpointer session_state = 0;
-GMutex data_mutex;
-GCond data_cond;
+GMutex session_state_mutex;
+GCond session_state_cond;
 
 void sr_sampling_thread(void){
     if (sr_session_start(session) == SR_OK){
         g_message("START sampling");
-        g_mutex_lock (&data_mutex);
+        g_mutex_lock (&session_state_mutex);
         session_state = 1;
-        g_cond_signal(&data_cond);
-        g_mutex_unlock(&data_mutex);
+        g_cond_signal(&session_state_cond);
+        g_mutex_unlock(&session_state_mutex);
         sr_session_run(session);
     }
 }
@@ -87,9 +87,9 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         json_builder_set_member_name(builder, "session_state");
         
         //WARNING lock/unlock
-        g_mutex_lock (&data_mutex);
+        g_mutex_lock (&session_state_mutex);
         json_builder_add_int_value(builder, session_state);//session_state);
-        g_mutex_unlock (&data_mutex);
+        g_mutex_unlock (&session_state_mutex);
         
         g_message("Get session state");
     }
@@ -488,11 +488,11 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         //guint8 sr_run = json_node_get_int(member_node);
         json_builder_set_member_name(builder, "run_session");
         
-        g_mutex_lock(&data_mutex);
+        g_mutex_lock(&session_state_mutex);
         if(!session_state){
             GThread *thread = g_thread_new("sr_sampling_thread", sr_sampling_thread, NULL);
             while (!session_state)
-                g_cond_wait (&data_cond, &data_mutex);
+                g_cond_wait (&session_state_cond, &session_state_mutex);
             
             json_builder_add_int_value(builder, session_state);
             g_message("Start session: %d", session_state);
@@ -504,7 +504,7 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
                 g_message("Stop session");
             }
         }
-        g_mutex_unlock(&data_mutex);
+        g_mutex_unlock(&session_state_mutex);
     }
     else {
         g_message("Unknown set option");
@@ -607,10 +607,10 @@ char *create_status_response(char *name, char *value){
 }
 
 void session_stop_response(void){
-    g_mutex_lock (&data_mutex);
+    g_mutex_lock (&session_state_mutex);
     session_state = 0;
-    //g_cond_signal(&data_cond);
-    g_mutex_unlock(&data_mutex);
+    //g_cond_signal(&session_state_cond);
+    g_mutex_unlock(&session_state_mutex);
     
     JsonBuilder *builder = json_builder_new();
     json_builder_begin_object(builder);
