@@ -87,11 +87,11 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         json_builder_set_member_name(builder, "session_state");
         
         //WARNING lock/unlock
-        g_mutex_lock (&session_state_mutex);
+        //g_mutex_lock (&session_state_mutex);
         json_builder_add_int_value(builder, session_state);//session_state);
-        g_mutex_unlock (&session_state_mutex);
+        //g_mutex_unlock (&session_state_mutex);
         
-        g_message("Get session state");
+        g_message("Get session state %d", session_state);
     }
     //REQUEST CHANNELS
     else if (!strcmp(req, get_channels)){
@@ -543,8 +543,18 @@ void json_parse(char *buf, guint64 len){
     
     JsonObject *object = json_node_get_object(root);
     
+    //ATTENTION rid - request ID
+    char *rid = json_object_get_string_member(object, "rid");
+    
     json_builder_begin_object(builder);
+
+
+
     json_object_foreach_member(object, object_member_cb, builder);
+    json_builder_set_member_name(builder, "rid");
+    json_builder_add_string_value(builder, rid);
+    
+    
     json_builder_end_object(builder);
     
     JsonGenerator *gen = json_generator_new();
