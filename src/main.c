@@ -206,7 +206,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
                     continue;
                 json_builder_add_string_value(builder, srci->id);
             }
-            g_array_free(opts, TRUE);
+            //g_array_free(opts, TRUE);
             json_builder_end_array(builder);
         }
         else{
@@ -276,9 +276,9 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
                         json_builder_add_int_value(builder, rates[i]);
                     }
                 }
-                g_variant_unref(gvar_list);
+                //g_variant_unref(gvar_list);
                 json_builder_end_array(builder);
-                g_variant_unref(gvar_dict);
+                //g_variant_unref(gvar_dict);
                 g_message("Get samplerates");
             }
         }
@@ -299,7 +299,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
             else{
                 guint64 samplerate = g_variant_get_uint64(gvar);
                 json_builder_add_int_value(builder, samplerate);
-                g_variant_unref(gvar);
+                //g_variant_unref(gvar);
                 g_message("Get samplerate: %ld", samplerate);
             }
         }
@@ -314,7 +314,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
             json_builder_add_int_value(builder, samples[i]);
         }
         json_builder_end_array(builder);
-        g_free(samples);
+        //g_free(samples);
         g_message("Get samples");
     }
     
@@ -334,7 +334,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
             else{
                 guint64 sample = g_variant_get_uint64(gvar);
                 json_builder_add_int_value(builder, sample);
-                g_variant_unref(gvar);
+                //g_variant_unref(gvar);
                 g_message("Get sample: %ld", sample);
             }
         }
@@ -573,12 +573,12 @@ void json_parse(char *buf, guint64 len){
     
     //json_generator_to_stream(gen, ostream, NULL, NULL);
     
-    json_node_free(resp_root);
-    g_object_unref(parser);
-    g_object_unref(gen);
-    g_object_unref(builder);
-    g_free(response);
-    g_free(tmp);
+    //json_node_free(resp_root);
+    //g_object_unref(parser);
+    //g_object_unref(builder);
+    //g_object_unref(gen);
+    //g_free(response);
+    //g_free(tmp);
 }
 
 gboolean read_cb(GIOChannel *source, GIOCondition cond, gpointer data){
@@ -588,32 +588,8 @@ gboolean read_cb(GIOChannel *source, GIOCondition cond, gpointer data){
     g_io_channel_read_chars(source, buf, BUF_SIZE, &len, &error);
     //g_message("buf----> %s", buf);
     json_parse(buf, len);
-    g_free(buf);
+    //g_free(buf);
     return TRUE;
-}
-
-char *create_status_response(char *name, char *value){
-    JsonBuilder *builder = json_builder_new();
-    json_builder_begin_object(builder);
-
-    json_builder_set_member_name(builder, name);
-    json_builder_add_string_value(builder, value);
-    
-    json_builder_end_object(builder);
-    JsonGenerator *gen = json_generator_new();
-    JsonNode *resp_root = json_builder_get_root(builder);
-    json_generator_set_root(gen, resp_root);
-    char *response = json_generator_to_data(gen, NULL);
-    
-    char *tmp = g_malloc(strlen(response) + 1);
-    tmp[0] = JSON_PT;
-    tmp[1] = '\0';
-    strcat(tmp, response);
-    
-    g_object_unref(gen);
-    g_object_unref(builder);
-    g_free(response);
-    return tmp;
 }
 
 void session_stop_response(void){
@@ -654,10 +630,6 @@ gboolean incoming_callback(GSocketService *service, GSocketConnection *connectio
     g_object_ref(connection);
     GSocket *socket = g_socket_connection_get_socket(connection);
     ostream = g_io_stream_get_output_stream(connection);
-    
-    char *tmp = create_status_response("status", "ready");
-    g_output_stream_write(ostream, tmp, strlen(tmp), NULL, NULL);
-    g_free(tmp);
     
     gint fd = g_socket_get_fd(socket);
     GIOChannel *channel = g_io_channel_unix_new(fd);
