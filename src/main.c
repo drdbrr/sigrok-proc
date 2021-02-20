@@ -8,6 +8,7 @@
 #include <float.h>
 #include <glib-object.h>
 #include <json-glib/json-glib.h>
+#include <zip.h>
 
 #define BUF_SIZE 1024
 
@@ -621,7 +622,7 @@ void session_stop_response(void){
     g_object_unref(builder);
     g_free(response);
     g_free(tmp);
-    g_message("send status %d", session_state);
+    //g_message("send status %d", session_state);
 }
 
 gboolean incoming_callback(GSocketService *service, GSocketConnection *connection, GObject *source_object, gpointer user_data){
@@ -702,10 +703,21 @@ done:
 }
 
 void datafeed_in(const struct sr_dev_inst *sdi, const struct sr_datafeed_packet *packet, void *cb_data){
+    const struct sr_datafeed_analog *analog;
+    static uint64_t rcvd_samples_logic = 0;
+    static uint64_t rcvd_samples_analog = 0;
+    /*
+    z_stream defstream;
+    defstream.zalloc = Z_NULL;
+    defstream.zfree = Z_NULL;
+    defstream.opaque = Z_NULL;
+    */
+    
     pck_cnt++;
     switch (packet->type) {
         case SR_DF_HEADER:
             g_message("Header received");
+            rcvd_samples_logic = rcvd_samples_analog = 0;
             break;
             
         case SR_DF_LOGIC:
@@ -713,6 +725,13 @@ void datafeed_in(const struct sr_dev_inst *sdi, const struct sr_datafeed_packet 
             break;
 
         case SR_DF_ANALOG:
+            analog = packet->payload;
+            //defstream.avail_in = (uInt)strlen(a)+1;
+            g_message("cli: Received SR_DF_ANALOG (%d samples).", analog->num_samples);
+            if (analog->num_samples == 0)
+                break;
+            rcvd_samples_analog += analog->num_samples;
+            
             analog_cnt++;
             break;
 
