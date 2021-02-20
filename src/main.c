@@ -232,7 +232,6 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         }
         
         json_builder_end_array(builder);
-        
         json_builder_end_object(builder);
         g_message("Get session");
     }
@@ -571,14 +570,15 @@ void json_parse(char *buf, guint64 len){
     
     g_output_stream_write(ostream, tmp, strlen(tmp), NULL, NULL);
     
+    //g_message("PROC-TX:%s", tmp);
     //json_generator_to_stream(gen, ostream, NULL, NULL);
     
-    //json_node_free(resp_root);
-    //g_object_unref(parser);
-    //g_object_unref(builder);
+    json_node_free(resp_root);
+    g_object_unref(parser);
+    g_object_unref(builder);
     //g_object_unref(gen);
-    //g_free(response);
-    //g_free(tmp);
+    g_free(response);
+    g_free(tmp);
 }
 
 gboolean read_cb(GIOChannel *source, GIOCondition cond, gpointer data){
@@ -586,9 +586,9 @@ gboolean read_cb(GIOChannel *source, GIOCondition cond, gpointer data){
     gsize len;
     char *buf = g_malloc(BUF_SIZE);
     g_io_channel_read_chars(source, buf, BUF_SIZE, &len, &error);
-    //g_message("buf----> %s", buf);
+    //g_message("PROC-RX: %s", buf);
     json_parse(buf, len);
-    //g_free(buf);
+    g_free(buf);
     return TRUE;
 }
 
@@ -753,7 +753,9 @@ struct sr_channel_group *lookup_channel_group(struct sr_dev_inst *sdi, const cha
 }
 
 void end_sampling_cb(void){
-    session_stop_response();
+    //g_message("___________> %d", session_state);
+    if (session_state)
+        session_stop_response();
     
     g_message("End sampling");
     g_message("logic:%d", logic_cnt);
