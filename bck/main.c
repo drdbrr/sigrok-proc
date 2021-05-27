@@ -109,8 +109,6 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         const GSList *l;
         struct srd_decoder *dec;
         
-        char *doc_str = "";
-        
         //srd_decoder_load_all();
         sl = g_slist_copy((GSList *)srd_decoder_list());
         sl = g_slist_sort(sl, sort_pds);
@@ -134,25 +132,8 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
             json_builder_set_member_name(builder, "desc");
             json_builder_add_string_value(builder, dec->desc);
             
-            json_builder_set_member_name(builder, "tags");
-            json_builder_begin_array(builder);
-            for (GSList *l = dec->tags; l; l = l->next){
-                char *tag = l->data;
-                json_builder_add_string_value(builder, tag);
-            }
-            json_builder_end_array(builder);
-            
-            //ATTENTION
-            json_builder_set_member_name(builder, "doc");            
-            doc_str = srd_decoder_doc_get(dec);
-            JsonNode *doc_nd = json_node_init_string (json_node_alloc(), doc_str);
-            json_builder_add_value(builder, doc_nd);              
-            g_free(doc_str);
-            
-            /*
             json_builder_set_member_name(builder, "license");
             json_builder_add_string_value(builder, dec->license);
-            */
             
             json_builder_end_object(builder);
         }
@@ -463,7 +444,11 @@ gint find_channel_cb(gpointer pa, gpointer pb){
     return strcmp(ch->name, pb);
 }
 
-static void process_pd_opts_cb(struct srd_decoder_option *o, JsonBuilder *builder){
+static void process_pd_opts(gpointer item, gpointer builder){
+    //g_message("ENTER OPT CALLBACK");
+    
+    struct srd_decoder_option *o = item;
+    
     json_builder_begin_object(builder);
             
     json_builder_set_member_name(builder, "id");
@@ -472,27 +457,77 @@ static void process_pd_opts_cb(struct srd_decoder_option *o, JsonBuilder *builde
     json_builder_set_member_name(builder, "desc");
     json_builder_add_string_value(builder, o->desc);
     
-    const gchar *type_str = NULL;
-    type_str = g_variant_get_type_string(o->def);
     
-    if (type_str != NULL){
-        JsonNode *type_nd = json_node_init_string (json_node_alloc(), type_str);
-        json_builder_set_member_name(builder, "type");
-        json_builder_add_value(builder, type_nd);
+    GSList *ovl;
+    json_builder_set_member_name(builder, "def");
+    if (g_variant_is_of_type(o->def, G_VARIANT_TYPE_STRING)){
+        gsize *sz;
+        gchar *def_val = g_variant_get_string(o->def, &sz);
+        json_builder_add_string_value(builder, def_val);
         
-        json_builder_set_member_name(builder, "defv");
-        JsonNode *def_nd = json_gvariant_serialize(o->def);
-        json_builder_add_value(builder, def_nd);
-        
-        if(o->values != NULL){
+        if (g_slist_length(o->values)){
             json_builder_set_member_name(builder, "values");
             json_builder_begin_array(builder);
-            for (GSList *ovl = o->values; ovl; ovl = ovl->next){
-                JsonNode *v_nd = json_gvariant_serialize(ovl->data);
-                json_builder_add_value(builder, v_nd);
-            }
+            
+            for (ovl = o->values; ovl; ovl = ovl->next)
+                json_builder_add_string_value(builder, (gchar *)ovl->data);
+            
             json_builder_end_array(builder);
         }
+    
+    }
+    else if (g_variant_is_of_type(o->def, G_VARIANT_TYPE_INT64)){
+        gint64 def_val = g_variant_get_int64(o->def);
+        
+        json_builder_add_int_value(builder, def_val);
+        
+        if (g_slist_length(o->values)){
+            json_builder_set_member_name(builder, "values");
+            json_builder_begin_array(builder);
+            
+            for (ovl = o->values; ovl; ovl = ovl->next)
+                json_builder_add_int_value(builder, g_variant_get_int64(ovl->data));
+            
+            json_builder_end_array(builder);
+        }
+    }
+    else if (g_variant_is_of_type(o->def, G_VARIANT_TYPE_DOUBLE)){
+        gdouble def_val = g_variant_get_double(o->def);
+        json_builder_add_double_value(builder, def_val);
+        
+        if (g_slist_length(o->values)){
+            json_builder_set_member_name(builder, "values");
+            json_builder_begin_array(builder);
+            
+            for (ovl = o->values; ovl; ovl = ovl->next){
+                gdouble val = g_variant_get_double(ovl->data);
+                json_builder_add_double_value(builder, val);
+            }
+            
+            json_builder_end_array(builder);
+        }
+    }
+    else if (g_variant_is_of_type(o->def, G_VARIANT_TYPE_BOOLEAN)){
+        gboolean def_val = g_variant_get_boolean(o->def);
+        
+        
+        json_builder_add_boolean_value(builder, def_val);
+        
+        if (g_slist_length(o->values)){
+            json_builder_set_member_name(builder, "values");
+            json_builder_begin_array(builder);
+            
+            for (ovl = o->values; ovl; ovl = ovl->next){
+                gboolean val = g_variant_get_boolean(ovl->data)
+                json_builder_add_boolean_value(builder, val);
+            }
+            
+            json_builder_end_array(builder);
+        }
+        
+        
+        
+    
     }
     json_builder_end_object(builder);
 }
@@ -560,6 +595,14 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         
         dec = di->decoder;
         
+        
+        
+        
+        //g_message("=========================================>DECODER OPTIONS LENGTH:%d", g_slist_length(dec->options));
+        
+        
+        
+        
         json_builder_set_member_name(builder, "register_pd");
         json_builder_begin_object(builder);
         
@@ -576,10 +619,23 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         json_builder_set_member_name(builder, "desc");
         json_builder_add_string_value(builder, dec->desc);
         
-
+        
+        
+        /*
+        for (l = dec->options; l; l = l->next) {
+            opt = l->data;
+            g_message("================OPTION ID:%s", opt->id);
+            g_message("================OPTION DESC:%s", opt->desc);
+        }
+        */
         json_builder_set_member_name(builder, "options");
         json_builder_begin_array(builder);
-        g_slist_foreach(dec->options, process_pd_opts_cb, builder);
+        
+        
+        //guint olll = g_slist_length(dec->options);
+        //g_message("LENGTH OF OPTIONS LIST=========>%d", olll);
+        g_slist_foreach(dec->options, process_pd_opts, builder);
+        
         json_builder_end_array(builder);
         
         json_builder_set_member_name(builder, "annotationRows");
@@ -963,7 +1019,7 @@ gboolean incoming_callback(GThreadedSocketService *service, GSocketConnection *c
     
     
     
-    //srd_log_loglevel_set(5);
+    srd_log_loglevel_set(5);
         
     if (srd_init(NULL) == SRD_OK) {
         srd_decoder_load_all();

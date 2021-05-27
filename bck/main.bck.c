@@ -16,9 +16,6 @@
 
 #define CHUNK_SIZE (4 * 1024 * 1024)
 
-
-static gint sort_pds(gconstpointer a, gconstpointer b);
-
 GMainLoop *loop = NULL;
 
 struct sr_session *session = NULL;
@@ -31,9 +28,14 @@ struct writer_data *wrd;
 
 static uint64_t sample_rate = 0;
 
-struct srd_session *srd_sess = NULL;
-struct srd_decoder_inst *di;
-
+/*
+struct sr_output {
+    const struct sr_output_module *module;
+    const struct sr_dev_inst *sdi;
+    const char *filename;
+    void *priv;
+};
+*/
 
 struct sr_output_module {
     const char *id;
@@ -93,75 +95,17 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
     const char *get_session = "session";
     const char *get_channels = "channels";
     const char *get_session_state = "session_state";
-    const char *get_decoders_list = "decoders_list";
     
     GVariant *gvar, *gvar_list, *gvar_dict;
     gsize num_elements;
     
-    struct sr_channel_group *channel_group;
+    //struct sr_channel_group *channel_group;
     //struct sr_dev_driver *driver;
     GArray *opts;
     const struct sr_key_info *srci;
     
-    //REQ PD LIST
-    if (!strcmp(req, get_decoders_list)){
-        GSList *sl;
-        const GSList *l;
-        struct srd_decoder *dec;
-        
-        char *doc_str = "";
-        
-        //srd_decoder_load_all();
-        sl = g_slist_copy((GSList *)srd_decoder_list());
-        sl = g_slist_sort(sl, sort_pds);
-        
-        json_builder_set_member_name(builder, "decoders_list");
-        json_builder_begin_array(builder);
-        
-        for (l = sl; l; l = l->next) {
-            dec = l->data;
-            json_builder_begin_object(builder);
-            
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, dec->id);
-            
-            json_builder_set_member_name(builder, "name");
-            json_builder_add_string_value(builder, dec->name);
-            
-            json_builder_set_member_name(builder, "longname");
-            json_builder_add_string_value(builder, dec->longname);
-            
-            json_builder_set_member_name(builder, "desc");
-            json_builder_add_string_value(builder, dec->desc);
-            
-            json_builder_set_member_name(builder, "tags");
-            json_builder_begin_array(builder);
-            for (GSList *l = dec->tags; l; l = l->next){
-                char *tag = l->data;
-                json_builder_add_string_value(builder, tag);
-            }
-            json_builder_end_array(builder);
-            
-            //ATTENTION
-            json_builder_set_member_name(builder, "doc");            
-            doc_str = srd_decoder_doc_get(dec);
-            JsonNode *doc_nd = json_node_init_string (json_node_alloc(), doc_str);
-            json_builder_add_value(builder, doc_nd);              
-            g_free(doc_str);
-            
-            /*
-            json_builder_set_member_name(builder, "license");
-            json_builder_add_string_value(builder, dec->license);
-            */
-            
-            json_builder_end_object(builder);
-        }
-        g_slist_free(sl);
-        //srd_decoder_unload_all();
-        json_builder_end_array(builder);
-    }
     //REQUEST SESSION STATE
-    else if (!strcmp(req, get_session_state)){
+    if (!strcmp(req, get_session_state)){
         json_builder_set_member_name(builder, "session_state");
         
         //WARNING lock/unlock
@@ -349,7 +293,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
                 }
                 else if ((gvar_list = g_variant_lookup_value(gvar_dict, "samplerate-steps", G_VARIANT_TYPE("at")))) {
                     rates = gen_list(10, 8);
-                    for (int i = 0; rates[i]; i++){
+                    for (i = 0; rates[i]; i++){
                         json_builder_add_int_value(builder, rates[i]);
                     }
                 }
@@ -458,195 +402,18 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
 }
 //---------------------------------------------------------------
 
-gint find_channel_cb(gpointer pa, gpointer pb){
-    struct sr_channel *ch = pa;
-    return strcmp(ch->name, pb);
-}
-
-static void process_pd_opts_cb(struct srd_decoder_option *o, JsonBuilder *builder){
-    json_builder_begin_object(builder);
-            
-    json_builder_set_member_name(builder, "id");
-    json_builder_add_string_value(builder, o->id);
-    
-    json_builder_set_member_name(builder, "desc");
-    json_builder_add_string_value(builder, o->desc);
-    
-    const gchar *type_str = NULL;
-    type_str = g_variant_get_type_string(o->def);
-    
-    if (type_str != NULL){
-        JsonNode *type_nd = json_node_init_string (json_node_alloc(), type_str);
-        json_builder_set_member_name(builder, "type");
-        json_builder_add_value(builder, type_nd);
-        
-        json_builder_set_member_name(builder, "defv");
-        JsonNode *def_nd = json_gvariant_serialize(o->def);
-        json_builder_add_value(builder, def_nd);
-        
-        if(o->values != NULL){
-            json_builder_set_member_name(builder, "values");
-            json_builder_begin_array(builder);
-            for (GSList *ovl = o->values; ovl; ovl = ovl->next){
-                JsonNode *v_nd = json_gvariant_serialize(ovl->data);
-                json_builder_add_value(builder, v_nd);
-            }
-            json_builder_end_array(builder);
-        }
-    }
-    json_builder_end_object(builder);
-}
-
-void pd_channels_to_json(GSList *channels, gpointer builder){
-    json_builder_begin_array(builder);
-    struct srd_channel *pdch;
-    GSList *l;
-    for (l = channels; l; l = l->next) {
-        pdch = l->data;
-        json_builder_begin_object(builder);
-        
-        
-        json_builder_set_member_name(builder, "id");
-        json_builder_add_string_value(builder, pdch->id);
-        
-        json_builder_set_member_name(builder, "name");
-        json_builder_add_string_value(builder, pdch->name);
-        
-        json_builder_set_member_name(builder, "desc");
-        json_builder_add_string_value(builder, pdch->desc);
-        
-        json_builder_set_member_name(builder, "order");
-        json_builder_add_int_value(builder, pdch->order);
-        
-        json_builder_end_object(builder);
-    }
-    json_builder_end_array(builder);
-}
-
 //--------------------------SET OPTIONS--------------------------
 static void object_set_cb(JsonObject *object, const char *member_name, JsonNode *member_node, gpointer builder){
-    const char *set_channel = "channel";
     const char *set_driver = "driver";
     const char *set_dev_num = "dev_num";
     const char *set_samplerate = "samplerate";
     const char *set_sample = "sample";
     const char *set_run_session = "run_session";
-    
     GVariant *gvar = NULL;
     GVariant *omg = NULL;
     
-    const char *set_decoder = "register_pd";
-    struct srd_decoder *dec;
-    
-    GSList *l;
-    struct srd_decoder_option *opt;
-    
-    //ADD DECODER BY ID
-    if(!strcmp(member_name, set_decoder)){
-        const char *id = json_node_get_string(member_node);
-        //const char *id = json_object_get_string_member(object, "id");
-        
-        /*
-        if (srd_decoder_load("uart") == SRD_OK ){
-            g_message("_____SRD_LOAD");
-        }
-        */
-        
-        if (srd_decoder_get_by_id(id)){
-            g_message("ALL OK");
-        }
-        
-        di = srd_inst_new(srd_sess, id, NULL);
-        
-        dec = di->decoder;
-        
-        json_builder_set_member_name(builder, "register_pd");
-        json_builder_begin_object(builder);
-        
-        
-        json_builder_set_member_name(builder, "id");
-        json_builder_add_string_value(builder, dec->id);
-        
-        json_builder_set_member_name(builder, "name");
-        json_builder_add_string_value(builder, dec->name);
-        
-        json_builder_set_member_name(builder, "longname");
-        json_builder_add_string_value(builder, dec->longname);
-        
-        json_builder_set_member_name(builder, "desc");
-        json_builder_add_string_value(builder, dec->desc);
-        
-
-        json_builder_set_member_name(builder, "options");
-        json_builder_begin_array(builder);
-        g_slist_foreach(dec->options, process_pd_opts_cb, builder);
-        json_builder_end_array(builder);
-        
-        json_builder_set_member_name(builder, "annotationRows");
-        json_builder_begin_array(builder);
-        GSList *l;
-        const struct srd_decoder_annotation_row *row;
-        for (l = dec->annotation_rows; l; l = l->next){
-            row = l->data;
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, row->id);
-            json_builder_set_member_name(builder, "desc");
-            json_builder_add_string_value(builder, row->desc);
-            json_builder_end_object(builder);
-        }
-        json_builder_end_array(builder);
-        
-        json_builder_set_member_name(builder, "channels");
-        pd_channels_to_json(dec->channels, builder);
-        json_builder_set_member_name(builder, "optChannels");
-        pd_channels_to_json(dec->opt_channels, builder);
-        
-        
-        json_builder_end_object(builder);
-        
-        /*
-        if (!(di = srd_inst_new(srd_sess, pd_id, options))) {
-            g_message("_____CANT SRD_INIT");
-        }
-        */
-        
-    }
-    //SET CHANNEL OPTION
-    else if (!strcmp(member_name, set_channel)){
-        struct sr_channel *ch;
-        
-        const JsonObject *channelObj = json_node_get_object(member_node);
-        
-        //options
-        const char *ch_name = json_object_get_string_member(channelObj, "name");
-        gboolean enabled = json_object_get_boolean_member(channelObj, "enable");
-        
-        //find channel
-        GSList *channels = sr_dev_inst_channels_get(sdi);
-        GSList *l = g_slist_find_custom(channels, ch_name, (GCompareFunc)find_channel_cb);
-        ch = l->data;
-
-        //response
-        json_builder_set_member_name(builder, "channel");
-        
-        json_builder_begin_object(builder);
-        
-        json_builder_set_member_name(builder, "name");
-        json_builder_add_string_value(builder, ch->name);
-        
-        json_builder_set_member_name(builder, "enable");
-
-        //apply option
-        if (sr_dev_channel_enable(ch, enabled) == SR_OK){
-            json_builder_add_boolean_value(builder, enabled);
-            g_message("CH:%s, EN:%d", ch->name, enabled);
-        }
-        
-        json_builder_end_object(builder);
-    }
     //SET DRIVER
-    else if (!strcmp(member_name, set_driver)){
+    if (!strcmp(member_name, set_driver)){
         const char *drv = json_node_get_string(member_node);
         driver = NULL;
         struct sr_dev_driver **drivers;
@@ -769,11 +536,11 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
 //---------------------------------------------------------------
     
 static void object_member_cb(JsonObject *object, const char *member_name, JsonNode *member_node, gpointer builder){
-    const char *get = "get";
-    const char *set = "set";
+    const char *get = "get-config";
+    const char *set = "set-config";
     
     if (!strcmp(member_name, get)){
-        json_builder_set_member_name(builder, "get");
+        json_builder_set_member_name(builder, "get-config");
         json_builder_begin_object(builder);
         JsonArray *get_opts = json_node_get_array(member_node);
         json_array_foreach_element(get_opts, array_get_cb, builder);
@@ -781,7 +548,7 @@ static void object_member_cb(JsonObject *object, const char *member_name, JsonNo
     }
     //else if (!strcmp(member_name, set)){
     if (!strcmp(member_name, set)){
-        json_builder_set_member_name(builder, "set");
+        json_builder_set_member_name(builder, "set-config");
         json_builder_begin_object(builder);
         JsonObject *set_opts = json_node_get_object(member_node);
         json_object_foreach_member(set_opts, object_set_cb, builder);
@@ -845,7 +612,7 @@ guint32 json_parse(char *buf, guint64 len, GAsyncQueue *out_queue){
     json_node_free(resp_root);
     g_object_unref(parser);
     g_object_unref(builder);
-    g_object_unref(gen);
+    //g_object_unref(gen);
 
     return content_length;
 }
@@ -907,7 +674,7 @@ gboolean socket_broken_cb(GIOChannel *source, GIOCondition cond, gpointer data){
     return TRUE;
 };
 
-void writer_thread(struct writer_data *wrd){
+void writer_thread(struct writer_data *wr){
     GError *error=NULL;
     gsize *bytes_written;
     struct data_packet *response;
@@ -918,7 +685,7 @@ void writer_thread(struct writer_data *wrd){
     guint8 retry;
     
     while(TRUE){
-        response = g_async_queue_pop(wrd->out_queue);
+        response = g_async_queue_pop(wr->out_queue);
         
         //GIOFlags flags = g_io_channel_get_flags(wr->channel);
         //if (flags |= G_IO_FLAG_IS_WRITABLE){
@@ -928,7 +695,7 @@ void writer_thread(struct writer_data *wrd){
         retry = 0;
         while (response->length){
             dt = &response->data[pos];
-            g_io_channel_write(wrd->channel, dt, response->length, &bytes_written);
+            g_io_channel_write(wr->channel, dt, response->length, &bytes_written);
             g_message("SOCKET WRITE:%d, response->length:%d, header len:%d, retry:%d", bytes_written, response->length, *((guint32*)response->data), retry);
             retry++;
             tt = (guint32)bytes_written;
@@ -961,16 +728,6 @@ gboolean incoming_callback(GThreadedSocketService *service, GSocketConnection *c
     rrd->received = 0;
     rrd->content_length = 0;
     
-    
-    
-    //srd_log_loglevel_set(5);
-        
-    if (srd_init(NULL) == SRD_OK) {
-        srd_decoder_load_all();
-    }
-    srd_session_new(&srd_sess);
-    
-    
     g_byte_array_ref(rrd->array);
     g_object_ref(connection);
     
@@ -1000,13 +757,6 @@ static const GOptionEntry optargs[] = {
     {"unix-socket", 'u', 0, G_OPTION_ARG_FILENAME_ARRAY, &opt_unix_socket, "Create unix socket by path", NULL},
     {NULL, 0, 0, 0, NULL, NULL, NULL}
 };
-
-static gint sort_pds(gconstpointer a, gconstpointer b){
-    const struct srd_decoder *sda, *sdb;
-    sda = (const struct srd_decoder *)a;
-    sdb = (const struct srd_decoder *)b;
-    return strcmp(sda->id, sdb->id);
-}
 
 int main(int argc, char **argv){
     GMainLoop *loop;
@@ -1038,13 +788,6 @@ int main(int argc, char **argv){
         sr_session_datafeed_callback_add(session, datafeed_in, NULL);
         sr_session_stopped_callback_set(session, (sr_session_stopped_callback)end_sampling_cb, loop);
         
-        
-        
-        
-        
-        
-        
-        
         GThreadedSocketService *service;
         //service = g_socket_service_new();
         
@@ -1061,6 +804,7 @@ int main(int argc, char **argv){
         g_signal_connect(service, "run", G_CALLBACK(incoming_callback), NULL);
         
         g_socket_service_start(G_SOCKET_SERVICE(service));
+        
         
         g_main_loop_run(loop);
     }
@@ -1177,36 +921,26 @@ void session_stop_response(void){
     json_builder_set_member_name(builder, "run_session");
     json_builder_add_int_value(builder, session_state);
     
-    json_builder_set_member_name(builder, "content-type");
-    json_builder_add_string_value(builder, "application/json");
-    
     json_builder_end_object(builder);
     JsonGenerator *gen = json_generator_new();
     JsonNode *resp_root = json_builder_get_root(builder);
     json_generator_set_root(gen, resp_root);
+    char *response = json_generator_to_data(gen, NULL);
     
-    //char *tmp = json_generator_to_data(gen, NULL);
+    char *tmp = g_malloc(strlen(response) + 1);
+    //tmp[0] = AUTO_JSON_PT;
+    tmp[1] = '\0';
+    strcat(tmp, response);
     
+    //g_output_stream_write(ostream, tmp, strlen(tmp), NULL, NULL);
+    //g_output_stream_write_async(ostream, tmp, strlen(tmp), G_PRIORITY_DEFAULT, NULL, NULL, NULL);
     
-    guint32 *tmp_len = 0;
-    struct data_packet *response = g_malloc(sizeof(struct data_packet));
-    char *tmp = json_generator_to_data(gen, &tmp_len);
-    
-    guint32 resp_len = tmp_len;
-    
-    response->data = g_malloc(resp_len + PH_LEN);
-    memcpy(response->data, &resp_len, PH_LEN);
-    memcpy(&response->data[4], tmp, resp_len);
-    response->length = resp_len + PH_LEN;
-    
-    json_node_free(resp_root);
     g_object_unref(gen);
     g_object_unref(builder);
-    
-    g_async_queue_push(wrd->out_queue, response);
-    
+    g_free(response);
     g_free(tmp);
-}
+    //g_message("send status %d", session_state);
+};
 
 void end_sampling_cb(void){
     if (session_state)
