@@ -16,7 +16,6 @@
 
 #define CHUNK_SIZE (4 * 1024 * 1024)
 
-
 static gint sort_pds(gconstpointer a, gconstpointer b);
 
 GMainLoop *loop = NULL;
@@ -82,26 +81,33 @@ guint64 *gen_list(guint64 start, guint64 len){
 
 //--------------------------GET OPTIONS--------------------------
 static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpointer builder){
-    const char *req = json_node_get_string(element_node);
+
+    const char *req = NULL;
+    JsonObject *reqObj = NULL;
     
+    GType reqType = json_node_get_node_type(element_node);
+    
+    if (reqType == JSON_NODE_VALUE){
+        req = json_node_get_string(element_node);
+    }
+
+    else if (reqType == JSON_NODE_OBJECT){
+        reqObj = json_node_get_object(element_node);
+    }
+        
     const char *get_drivers = "drivers";
-    const char *get_samplerates = "samplerates";
-    const char *get_samplerate = "samplerate";
-    const char *get_samples = "samples";
-    const char *get_sample = "sample";
     const char *get_scan = "scan";
-    const char *get_session = "session";
-    const char *get_channels = "channels";
-    const char *get_session_state = "session_state";
+
     const char *get_decoders_list = "decoders_list";
-    
+
     GVariant *gvar, *gvar_list, *gvar_dict;
     gsize num_elements;
+
+    const struct sr_key_info *srci;
     
     struct sr_channel_group *channel_group;
-    //struct sr_dev_driver *driver;
     GArray *opts;
-    const struct sr_key_info *srci;
+    
     
     //REQ PD LIST
     if (!strcmp(req, get_decoders_list)){
@@ -160,159 +166,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         //srd_decoder_unload_all();
         json_builder_end_array(builder);
     }
-    //REQUEST SESSION STATE
-    else if (!strcmp(req, get_session_state)){
-        json_builder_set_member_name(builder, "session_state");
-        
-        //WARNING lock/unlock
-        //g_mutex_lock (&session_state_mutex);
-        json_builder_add_int_value(builder, session_state);//session_state);
-        //g_mutex_unlock (&session_state_mutex);
-        
-        g_message("Get session state %d", session_state);
-    }
-    //REQUEST CHANNELS
-    else if (!strcmp(req, get_channels)){
-        json_builder_set_member_name(builder, "channels");
-        
-        if (sdi != NULL){
-            struct sr_channel *ch;
-            GSList *l, *channels;
-            channels = sr_dev_inst_channels_get(sdi);
-            
-            json_builder_begin_object(builder);
-            
-            
-            //**************LOGIC**************
-            json_builder_set_member_name(builder, "logic");
-            json_builder_begin_array(builder);
-            
-            for (l = channels; l; l = l->next) {
-                ch = l->data;
-                if (ch->type == SR_CHANNEL_LOGIC /*10000*/){
-                    json_builder_begin_object(builder);
-                    
-                    json_builder_set_member_name(builder, "name");
-                    json_builder_add_string_value(builder, ch->name);
-                    
-                    json_builder_set_member_name(builder, "text");
-                    json_builder_add_string_value(builder, ch->name);
-                    
-                    json_builder_set_member_name(builder, "visible");
-                    json_builder_add_boolean_value(builder, ch->enabled);
-                    
-                    json_builder_end_object(builder);
-                }
-            }
-            json_builder_end_array(builder);
-            //*********************************
-            
-            //**************ANALOG**************
-            json_builder_set_member_name(builder, "analog");
-            json_builder_begin_array(builder);
-            //
-            
-            for (l = channels; l; l = l->next) {
-                ch = l->data;
-                if (ch->type == 10001 /*SR_CHANNEL_ANALOG*/){
-                    json_builder_begin_object(builder);
-                    
-                    json_builder_set_member_name(builder, "name");
-                    json_builder_add_string_value(builder, ch->name);
-                    
-                    json_builder_set_member_name(builder, "text");
-                    json_builder_add_string_value(builder, ch->name);
-                    
-                    json_builder_set_member_name(builder, "visible");
-                    json_builder_add_boolean_value(builder, ch->enabled);
-                    
-                    json_builder_end_object(builder);
-                }
-            }
-            json_builder_end_array(builder);
-            //**********************************
-            
-            json_builder_end_object(builder);
-        }
-        else {
-            json_builder_add_string_value(builder, "");
-        }
-        
-    }
     
-    //REQUEST SESSION
-    else if (!strcmp(req, get_session)){
-        json_builder_set_member_name(builder, "session");
-        
-        json_builder_begin_object(builder);
-        
-        json_builder_set_member_name(builder, "type");
-        if (sdi != NULL){
-            json_builder_add_string_value(builder, "device");
-        }
-        else {
-            json_builder_add_string_value(builder, "");
-        }
-        
-        json_builder_set_member_name(builder, "sourcename");
-        if (sdi != NULL){
-            struct sr_dev_driver *drv = sr_dev_inst_driver_get(sdi);
-            if (!strcmp(drv->name, (char *)"demo")){
-                json_builder_add_string_value(builder, "Demo");
-            }
-            else{
-                const char *vendor = sr_dev_inst_vendor_get(sdi);
-                json_builder_add_string_value(builder, vendor);
-            }
-        }
-        else{
-            json_builder_add_string_value(builder, "");
-        }
-        
-        json_builder_set_member_name(builder, "config");
-        if (sdi != NULL){
-            json_builder_begin_array(builder);
-            
-            driver = sr_dev_inst_driver_get(sdi);
-            //channel_group = lookup_channel_group(sdi, NULL);
-            
-            opts = sr_dev_options(driver, sdi, NULL);//, channel_group);
-            
-            for (int o = 0; o < opts->len; o++) {
-                uint32_t key = g_array_index(opts, uint32_t, o);
-                if (!(srci = sr_key_info_get(SR_KEY_CONFIG, key)))
-                    continue;
-                json_builder_add_string_value(builder, srci->id);
-            }
-            //g_array_free(opts, TRUE);
-            json_builder_end_array(builder);
-        }
-        else{
-            json_builder_add_string_value(builder, "");
-        }
-        
-        json_builder_set_member_name(builder, "channels");
-        json_builder_begin_array(builder);
-        
-        if (sdi != NULL){
-            GSList *cgl, *channel_groups;
-            struct sr_channel_group *cg;
-            channel_groups = sr_dev_inst_channel_groups_get(sdi);
-            for (cgl = channel_groups; cgl; cgl = cgl->next){
-                cg = cgl->data;
-                if ( !strcmp(cg->name, (char *)"Logic" )){
-                    json_builder_add_string_value(builder, "logic");
-                }
-                else if ( !strcmp(cg->name, (char *)"Analog" )){
-                    json_builder_add_string_value(builder, "analog");
-                }
-            }
-        }
-        
-        json_builder_end_array(builder);
-        json_builder_end_object(builder);
-        g_message("Get session");
-    }
     //REQUEST DRIVERS
     else if (!strcmp(req, get_drivers)){
         struct sr_dev_driver **drivers;
@@ -325,98 +179,7 @@ static void  array_get_cb(JsonArray *array, guint i, JsonNode *element_node, gpo
         json_builder_end_array(builder);
         g_message("Get drivers");
     }
-    
-    //REQUEST SAMPLERATES LIST
-    else if (!strcmp(req, get_samplerates)){
-        json_builder_set_member_name(builder, "samplerates");
-        if (sdi == NULL){
-            json_builder_add_string_value(builder, "error: no device");
-            g_message("ERROR: Get samplerates, no device");
-        }
-        else{
-            if (sr_config_list(driver, sdi, NULL, SR_CONF_SAMPLERATE, &gvar_dict) != SR_OK){
-                json_builder_add_string_value(builder, "error");
-                g_message("ERROR: Get samplerates");
-            }
-            else{
-                const guint64 *rates;
-                json_builder_begin_array(builder);
-                if ((gvar_list = g_variant_lookup_value(gvar_dict, "samplerates", G_VARIANT_TYPE("at")))){
-                    rates = g_variant_get_fixed_array(gvar_list, &num_elements, sizeof(rates));
-                    for (i = 0; i < num_elements; i++) {
-                        json_builder_add_int_value(builder, rates[i]);
-                    }
-                }
-                else if ((gvar_list = g_variant_lookup_value(gvar_dict, "samplerate-steps", G_VARIANT_TYPE("at")))) {
-                    rates = gen_list(10, 8);
-                    for (int i = 0; rates[i]; i++){
-                        json_builder_add_int_value(builder, rates[i]);
-                    }
-                }
-                //g_variant_unref(gvar_list);
-                json_builder_end_array(builder);
-                //g_variant_unref(gvar_dict);
-                g_message("Get samplerates");
-            }
-        }
-    }
-    
-    //REQUEST CURRENT SAMPLERATE
-    else if (!strcmp(req, get_samplerate)){
-        json_builder_set_member_name(builder, "samplerate");
-        if (sdi == NULL){
-            json_builder_add_string_value(builder, "error: no device");
-            g_message("ERROR: Get samplerate, no device");
-        }
-        else{
-            if(sr_config_get(driver, sdi, NULL, SR_CONF_SAMPLERATE, &gvar) != SR_OK){
-                json_builder_add_string_value(builder, "error");
-                g_message("ERROR: Get samplerate");
-            }
-            else{
-                guint64 samplerate = g_variant_get_uint64(gvar);
-                json_builder_add_int_value(builder, samplerate);
-                //g_variant_unref(gvar);
-                g_message("Get samplerate: %ld", samplerate);
-            }
-        }
-    }
-    
-    //REQUEST SAMPLE NUM LIST
-    else if (!strcmp(req, get_samples)){
-        guint64 *samples = gen_list(100, 12);
-        json_builder_set_member_name (builder, "samples");
-        json_builder_begin_array(builder);
-        for (int i = 0; samples[i]; i++){
-            json_builder_add_int_value(builder, samples[i]);
-        }
-        json_builder_end_array(builder);
-        //g_free(samples);
-        g_message("Get samples");
-    }
-    
-    //REQUEST CURRENT SAMPLE NUM
-    else if (!strcmp(req, get_sample)){
-        json_builder_set_member_name(builder, "sample");
-        
-        if (sdi == NULL){
-            json_builder_add_string_value(builder, "error: no device");
-            g_message("ERROR: Get samplerate, no device");
-        }
-        else{
-            if (sr_config_get(driver, sdi, NULL, SR_CONF_LIMIT_SAMPLES, &gvar) != SR_OK){
-                json_builder_add_string_value(builder, "error");
-                g_message("ERROR: Get sample");
-            }
-            else{
-                guint64 sample = g_variant_get_uint64(gvar);
-                json_builder_add_int_value(builder, sample);
-                //g_variant_unref(gvar);
-                g_message("Get sample: %ld", sample);
-            }
-        }
-    }
-    
+
     //REQUEST SCAN FOR DEVICE
     else if (!strcmp(req, get_scan)){
         json_builder_set_member_name(builder, "scan");
@@ -524,22 +287,20 @@ void pd_channels_to_json(GSList *channels, gpointer builder){
 }
 
 //--------------------------SET OPTIONS--------------------------
-static void object_set_cb(JsonObject *object, const char *member_name, JsonNode *member_node, gpointer builder){
-    const char *set_channel = "channel";
+static void object_set_cb(JsonObject *object, const char *member_name, JsonNode *member_node, gpointer builder) {
     const char *set_driver = "driver";
     const char *set_dev_num = "dev_num";
-    const char *set_samplerate = "samplerate";
-    const char *set_sample = "sample";
     const char *set_run_session = "run_session";
     
-    GVariant *gvar = NULL;
-    GVariant *omg = NULL;
+    GVariant *gvar = NULL, *gvar_dict, *gvar_list;
+    gsize num_elements;
     
     const char *set_decoder = "register_pd";
     struct srd_decoder *dec;
     
     GSList *l;
     struct srd_decoder_option *opt;
+
     
     //ADD DECODER BY ID
     if(!strcmp(member_name, set_decoder)){
@@ -612,39 +373,7 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         */
         
     }
-    //SET CHANNEL OPTION
-    else if (!strcmp(member_name, set_channel)){
-        struct sr_channel *ch;
-        
-        const JsonObject *channelObj = json_node_get_object(member_node);
-        
-        //options
-        const char *ch_name = json_object_get_string_member(channelObj, "name");
-        gboolean enabled = json_object_get_boolean_member(channelObj, "enable");
-        
-        //find channel
-        GSList *channels = sr_dev_inst_channels_get(sdi);
-        GSList *l = g_slist_find_custom(channels, ch_name, (GCompareFunc)find_channel_cb);
-        ch = l->data;
-
-        //response
-        json_builder_set_member_name(builder, "channel");
-        
-        json_builder_begin_object(builder);
-        
-        json_builder_set_member_name(builder, "name");
-        json_builder_add_string_value(builder, ch->name);
-        
-        json_builder_set_member_name(builder, "enable");
-
-        //apply option
-        if (sr_dev_channel_enable(ch, enabled) == SR_OK){
-            json_builder_add_boolean_value(builder, enabled);
-            g_message("CH:%s, EN:%d", ch->name, enabled);
-        }
-        
-        json_builder_end_object(builder);
-    }
+   
     //SET DRIVER
     else if (!strcmp(member_name, set_driver)){
         const char *drv = json_node_get_string(member_node);
@@ -682,6 +411,8 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         
         json_builder_set_member_name(builder, "dev_num");
         
+        json_builder_begin_object(builder);
+
         if (sr_session_dev_add(session, sdi) != SR_OK){
             json_builder_add_string_value(builder, "error");
             g_message("ERROR: add device");
@@ -689,54 +420,230 @@ static void object_set_cb(JsonObject *object, const char *member_name, JsonNode 
         else if (sr_dev_open(sdi) != SR_OK){
             json_builder_add_string_value(builder, "error");
             g_message("ERROR: open device");
-        }
-        else{
-            static uint64_t limit_samples = 1000000;
-            gvar = g_variant_new_uint64(limit_samples);
+        } else {
+            struct sr_dev_driver *drv;
+            
+            static uint64_t limit_sample = 1000000;
+            gvar = g_variant_new_uint64(limit_sample);
             sr_config_set(sdi, NULL, SR_CONF_LIMIT_SAMPLES, gvar);
+
+            json_builder_set_member_name(builder, "sourcename");
+            drv = sr_dev_inst_driver_get(sdi);
+            if (!strcmp(drv->name, (char *)"demo")){
+                json_builder_add_string_value(builder, "Demo");
+            }
+            else{
+                const char *vendor = sr_dev_inst_vendor_get(sdi);
+                json_builder_add_string_value(builder, vendor);
+            }
+
             
-            sr_config_get(driver, sdi, NULL, SR_CONF_SAMPLERATE, &omg);
-            sample_rate = g_variant_get_uint64(omg);
-            //g_message("-------->%d", sample_rate);
-            //g_variant_unref(omg);
             
+            GArray *opts;
+            const struct sr_key_info *srci;
+            guint8 i;
+
+            // DEVICE OPTIONS (ConfigKey.TRIGGER_MATCH, ConfigKey.AVG_SAMPLES, ConfigKey.AVERAGING, ConfigKey.CAPTURE_RATIO, ConfigKey.SAMPLERATE etc...)
+            // HAS CAPABILITIES
+            json_builder_set_member_name(builder, "devopts");
+            if (sdi != NULL){
+                json_builder_begin_array(builder);
+                drv = sr_dev_inst_driver_get(sdi);
+              
+                opts = sr_dev_options(drv, sdi, NULL);
+                
+                for (i = 0; i < opts->len; i++) {
+                    if (!(srci = sr_key_info_get(SR_KEY_CONFIG, g_array_index(opts, uint32_t, i))))
+                        continue;
+                    
+                    json_builder_begin_object(builder);
+
+                    json_builder_set_member_name(builder, "key");
+                    json_builder_add_int_value(builder, srci->key);
+                    
+                    if (srci->id){
+                        json_builder_set_member_name(builder, "id");
+                        json_builder_add_string_value(builder, srci->id);
+                    }
+                    
+                    if (srci->name){
+                        json_builder_set_member_name(builder, "name");
+                        json_builder_add_string_value(builder, srci->name);
+                    }
+                    
+                    if (srci->description){
+                        json_builder_set_member_name(builder, "desc");
+                        json_builder_add_string_value(builder, srci->description);
+                    }
+
+                    JsonArray *capsList = json_array_new();
+                    if (sr_dev_config_capabilities_list(sdi, NULL, srci->key) & SR_CONF_GET){
+                        json_array_add_string_element(capsList, "GET");
+                        
+                        json_builder_set_member_name(builder, "value");
+
+                        if (sr_config_get(driver, sdi, NULL, srci->key, &gvar) == SR_OK){
+                            if (srci->key == SR_CONF_SAMPLERATE){
+                                guint64 smplrate = g_variant_get_uint64(gvar);
+                                char *rate = sr_samplerate_string(smplrate);
+                                json_builder_add_string_value(builder, rate);
+                                g_free(rate);
+                            }
+                            else if (srci->key == SR_CONF_LIMIT_SAMPLES){
+                                guint64 sample = g_variant_get_uint64(gvar);
+                                char *rate = sr_si_string_u64(sample, " samples");
+                                json_builder_add_string_value(builder, rate);
+                                g_free(rate);
+                                
+                                json_array_add_string_element(capsList, "LIST");
+                                json_builder_set_member_name(builder, "values");
+                                guint64 *samples = gen_list(100, 12);
+                                json_builder_begin_array(builder);
+                                for (int i = 0; samples[i]; i++){
+                                    rate = sr_si_string_u64(samples[i], " samples");
+                                    json_builder_add_string_value(builder, rate);
+                                    g_free(rate);
+                                }
+                                json_builder_end_array(builder);
+                            } 
+                            else {
+                                JsonNode *value = json_gvariant_serialize(gvar);
+                                json_builder_add_value(builder, value);
+                            }
+                        }
+                    }
+                    
+                    if (sr_dev_config_capabilities_list(sdi, NULL, srci->key) & SR_CONF_SET){
+                        json_array_add_string_element(capsList, "SET");
+                    }
+
+                    if (sr_dev_config_capabilities_list(sdi, NULL, srci->key) & SR_CONF_LIST){
+                        json_array_add_string_element(capsList, "LIST");
+
+                        sr_config_list(driver, sdi, NULL, srci->key, &gvar_dict);
+                        json_builder_set_member_name(builder, "values");
+                        
+                        if (srci->key == SR_CONF_SAMPLERATE){
+                        
+                            uint64_t *rates;
+                            char *rate;
+                            
+                            json_builder_begin_array(builder);
+                            if ((gvar_list = g_variant_lookup_value(gvar_dict, "samplerates", G_VARIANT_TYPE("at")))){
+                                rates = g_variant_get_fixed_array(gvar_list, &num_elements, sizeof(rates));
+                                for (int i = 0; i < num_elements; i++) {
+                                    rate = sr_samplerate_string(rates[i]);
+                                    json_builder_add_string_value(builder, rate);
+                                    g_free(rate);
+                                }
+                                //g_variant_unref(gvar_dict);
+                            }
+                            else if ((gvar_list = g_variant_lookup_value(gvar_dict, "samplerate-steps", G_VARIANT_TYPE("at")))) {
+                                rates = gen_list(10, 8);
+                                for (int i = 0; rates[i]; i++){
+                                    rate = sr_samplerate_string(rates[i]);
+                                    json_builder_add_string_value(builder, rate);
+                                    g_free(rate);
+                                }
+                                //g_variant_unref(gvar_dict);
+                            }
+                            
+                            json_builder_end_array(builder);
+                            g_variant_unref(gvar_dict);
+                            g_variant_unref(gvar_list);
+                        }
+                        else {
+                            JsonNode *value = json_gvariant_serialize(gvar_dict);
+                            json_builder_add_value(builder, value);
+                        }
+                    }
+                    
+                    if (json_array_get_length(capsList)){
+                        json_builder_set_member_name(builder, "caps");
+                        JsonNode *capsNode = json_node_init_array(json_node_alloc(), capsList);
+                        json_builder_add_value(builder, capsNode);
+                    }
+                    
+                    json_builder_end_object(builder);
+                    
+                }
+                json_builder_end_array(builder);
+                g_array_free(opts, TRUE);
+            }
             
-            json_builder_add_string_value(builder, "set"); //indicates device is set
-            g_slist_free(devices);
-            g_message("Set dev_num %d", num);
+            //DRIVER OPTIONS (ConfigKey.DEMO_DEV, ConfigKey.OSCILLOSCOPE, ConfigKey.LOGIC_ANALYZER etc...)
+            //HAVE NO "identifier", NO CAPABILITIES
+            json_builder_set_member_name(builder, "drvopts");
+            if (sdi != NULL) {
+                json_builder_begin_array(builder);
+                drv = sr_dev_inst_driver_get(sdi);
+                if ((opts = sr_dev_options(drv, NULL, NULL))) {
+                    if (opts->len > 0) {
+                        
+                        for (i = 0; i < opts->len; i++) {
+                            if (!(srci = sr_key_info_get(SR_KEY_CONFIG, g_array_index(opts, uint32_t, i))))
+                                continue;
+                            
+                            json_builder_begin_object(builder);
+
+                            json_builder_set_member_name(builder, "key");
+                            json_builder_add_int_value(builder, srci->key);
+
+                            if (srci->id){
+                                json_builder_set_member_name(builder, "id");
+                                json_builder_add_string_value(builder, srci->id);
+                            }
+
+                            if (srci->name){
+                                json_builder_set_member_name(builder, "name");
+                                json_builder_add_string_value(builder, srci->name);
+                            }
+
+                            if (srci->description){
+                                json_builder_set_member_name(builder, "desc");
+                                json_builder_add_string_value(builder, srci->description);
+                            }
+                            json_builder_end_object(builder);
+                        }
+                        g_array_free(opts, TRUE);
+                    }
+                }
+                json_builder_end_array(builder);
+            }
+            }
+        
+        struct sr_channel *ch;
+        GSList *l, *channels;
+        channels = sr_dev_inst_channels_get(sdi);
+        
+        json_builder_set_member_name(builder, "channels");
+        json_builder_begin_array(builder);
+        for (l = channels; l; l = l->next) {
+            ch = l->data;
+            
+            json_builder_begin_object(builder);
+            
+            json_builder_set_member_name(builder, "name");
+            json_builder_add_string_value(builder, ch->name);
+
+            json_builder_set_member_name(builder, "enabled");
+            json_builder_add_boolean_value(builder, ch->enabled);
+
+            json_builder_set_member_name(builder, "index");
+            json_builder_add_int_value(builder, ch->index);
+            
+            json_builder_set_member_name(builder, "type");
+
+            if (ch->type == SR_CHANNEL_LOGIC /*10000*/)
+                json_builder_add_string_value(builder, "logic");
+            else if (ch->type == 10001 /*SR_CHANNEL_ANALOG*/)
+                json_builder_add_string_value(builder, "analog");
+            
+            json_builder_end_object(builder);
+                
         }
-    }
-    
-    //SET SAMPLERATE
-    else if (!strcmp(member_name, set_samplerate) && sdi != NULL){
-        guint64 smprate = json_node_get_int(member_node);
-        gvar = g_variant_new_uint64(smprate);
-        json_builder_set_member_name(builder, "samplerate");
-        if (sr_config_set(sdi, NULL, SR_CONF_SAMPLERATE, gvar) == SR_OK){            
-            json_builder_add_string_value(builder, "set");
-            g_message("Set samplerate %ld", smprate);
-            //g_variant_unref(gvar);
-        }
-        else {
-            json_builder_add_string_value(builder, "error");
-            g_message("ERROR: Set samplerate");
-        }
-    }
-    
-    //SET SAMPLES NUM
-    else if (!strcmp(member_name, set_sample) && sdi != NULL){
-        gint64 smpnum = json_node_get_int(member_node);
-        gvar = g_variant_new_uint64(smpnum);
-        json_builder_set_member_name(builder, "sample");
-        if (sr_config_set(sdi, NULL, SR_CONF_LIMIT_SAMPLES, gvar) == SR_OK){            
-            json_builder_add_string_value(builder, "set");
-            g_message("Set sample %ld", smpnum);
-            //g_variant_unref(gvar);
-        }
-        else {
-            json_builder_add_string_value(builder, "error");
-            g_message("ERROR: Set sample");
-        }
+        json_builder_end_array(builder);
+        json_builder_end_object(builder);
     }
     
     //SET RUN SESSION
@@ -903,7 +810,9 @@ gboolean read_cb(GIOChannel *source, GIOCondition cond, gpointer data){
 gboolean socket_broken_cb(GIOChannel *source, GIOCondition cond, gpointer data){
     GError *error = NULL;
     g_io_channel_shutdown(source, TRUE, &error);
+    // g_main_loop_quit(loop);
     g_message("Socket broken");
+    sr_exit(sr_ctx);
     return TRUE;
 };
 
@@ -960,16 +869,16 @@ gboolean incoming_callback(GThreadedSocketService *service, GSocketConnection *c
     rrd->json_len = 0;
     rrd->received = 0;
     rrd->content_length = 0;
-    
-    
-    
+
+
+
     //srd_log_loglevel_set(5);
-        
+    /*
     if (srd_init(NULL) == SRD_OK) {
         srd_decoder_load_all();
     }
     srd_session_new(&srd_sess);
-    
+    */
     
     g_byte_array_ref(rrd->array);
     g_object_ref(connection);
@@ -1008,9 +917,7 @@ static gint sort_pds(gconstpointer a, gconstpointer b){
     return strcmp(sda->id, sdb->id);
 }
 
-int main(int argc, char **argv){
-    GMainLoop *loop;
-    
+int main(int argc, char **argv) {
     GError *error = NULL;
     GOptionContext *context = g_option_context_new(NULL);
     
